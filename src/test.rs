@@ -6,6 +6,21 @@ use std::collections::BTreeMap;
 // use std::collections::BTreeSet;
 use std::collections::VecDeque;
 
+fn order_helper(id: OrderID, price: Price) -> LimitOrder {
+    LimitOrder {
+        id,
+        quantity: Quantity(1),
+        price,
+        side: OrderType::Buy,
+    }
+}
+
+#[test]
+fn order_id_works() {
+    let order_id = OrderID(0);
+    assert_eq!(order_id.0, 0);
+}
+
 #[test]
 fn btree_test() {
     let mut bt: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
@@ -22,7 +37,7 @@ fn btree_test() {
     assert_eq!(bt.last_key_value().unwrap().0, &99);
 
     let expected = BTreeSet::from([0, 1, 2, 3, 4]);
-    for (_, set) in &bt {
+    for set in bt.values() {
         assert_eq!(*set, expected);
     }
 
@@ -33,49 +48,37 @@ fn btree_test() {
 fn price_and_order_in_btree() {
     let mut bt: BTreeMap<Price, VecDeque<Order>> = BTreeMap::new();
 
-    for i in (0..100) {
-        for j in 0..5 {
-            bt.entry(Price { price: i })
+    for i in (0..3).rev() {
+        for j in 0..3 {
+            let order = order_helper(OrderID(j), Price(i));
+            bt.entry(order.price)
                 .or_default()
-                .push_back(Order::Market(MarketOrder {
-                    id: OrderID { id: j },
-                    quantity: Quantity { quantity: 5 },
-                    side: OrderType::Buy,
-                }));
+                .push_back(Order::Limit(order));
         }
     }
 
-    let expected = BTreeSet::from([
-        Order::Market(MarketOrder {
-            id: OrderID { id: 0 },
-            quantity: Quantity { quantity: 5 },
-            side: OrderType::Buy,
-        }),
-        Order::Market(MarketOrder {
-            id: OrderID { id: 1 },
-            quantity: Quantity { quantity: 5 },
-            side: OrderType::Buy,
-        }),
-        Order::Market(MarketOrder {
-            id: OrderID { id: 2 },
-            quantity: Quantity { quantity: 5 },
-            side: OrderType::Buy,
-        }),
-        Order::Market(MarketOrder {
-            id: OrderID { id: 3 },
-            quantity: Quantity { quantity: 5 },
-            side: OrderType::Buy,
-        }),
-        Order::Market(MarketOrder {
-            id: OrderID { id: 4 },
-            quantity: Quantity { quantity: 5 },
-            side: OrderType::Buy,
-        }),
-    ]);
+    let collected_keys: Vec<&Price> = bt.keys().collect();
+    let expected_keys: Vec<&Price> = vec![&Price(0), &Price(1), &Price(2)];
+    assert_eq!(collected_keys, expected_keys);
+}
 
-    for (_, set) in &bt {
-        assert_eq!(*set, expected);
+#[test]
+fn orderid_sort_in_btree() {
+    let mut pricelvl: PriceLevel = PriceLevel {
+        orders: BTreeMap::new(),
+        running_total: 0,
+    };
+
+    for i in (0..3).rev() {
+        for j in 0..3 {
+            let order = order_helper(OrderID(j), Price(i));
+            pricelvl.orders.insert(order.id, Order::Limit(order));
+            pricelvl.running_total += 1;
+        }
     }
 
-    assert_eq!(*bt.last_key_value().unwrap().0, Price { price: 99 });
+    let collected_keys: Vec<&OrderID> = pricelvl.orders.keys().collect();
+    let expected_keys: Vec<&OrderID> = vec![&OrderID(0), &OrderID(1), &OrderID(2)];
+
+    assert_eq!(collected_keys, expected_keys);
 }

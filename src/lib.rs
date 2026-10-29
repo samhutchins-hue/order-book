@@ -2,44 +2,40 @@
 mod test;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::collections::HashMap;
 
 // positive, monotonically increasing
 // to allow ordering of FIFO queue of requests
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
-struct OrderID {
-    id: u64,
-}
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+struct OrderID(u64);
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
-struct Quantity {
-    quantity: u64,
-}
+#[derive(Copy, Clone, Debug)]
+struct Quantity(u64);
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
-struct Price {
-    price: u64,
-}
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+struct Price(u64);
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Debug)]
 enum Order {
     Market(MarketOrder),
     Limit(LimitOrder),
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Debug)]
 enum OrderType {
     Buy,
     Sell,
 }
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+
+#[derive(Debug)]
 struct MarketOrder {
     id: OrderID,
     quantity: Quantity,
     side: OrderType,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Debug)]
 struct LimitOrder {
     id: OrderID,
     quantity: Quantity,
@@ -47,13 +43,15 @@ struct LimitOrder {
     side: OrderType,
 }
 
+struct PriceLevel {
+    orders: BTreeMap<OrderID, Order>,
+    running_total: u64,
+}
+
 struct OrderBook {
-    lowest_bid_id: OrderID,
-    lowets_bid_price: Price,
-    lowest_ask_id: OrderID,
-    lowest_ask_price: Price,
-    bids: BTreeMap<Price, BTreeSet<Order>>,
-    asks: BTreeMap<Price, BTreeSet<Order>>,
+    bids: BTreeMap<Price, PriceLevel>,
+    asks: BTreeMap<Price, PriceLevel>,
+    orders: HashMap<OrderID, (OrderType, Price)>,
 }
 
 #[cfg(test)]
@@ -63,8 +61,8 @@ mod tests {
     #[test]
     fn it_works() {
         let m_order = MarketOrder {
-            id: OrderID { id: 0 },
-            quantity: Quantity { quantity: 5 },
+            id: OrderID(0),
+            quantity: Quantity(5),
             side: OrderType::Buy,
         };
     }
