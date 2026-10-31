@@ -1,84 +1,74 @@
-use crate::MarketOrder;
 use crate::Order;
 use crate::Price;
 use crate::*;
 use std::collections::BTreeMap;
-// use std::collections::BTreeSet;
-use std::collections::VecDeque;
 
-fn order_helper(id: OrderID, price: Price) -> LimitOrder {
+fn order_helper(id: OrderID, price: Price, side: Side) -> LimitOrder {
     LimitOrder {
         id,
-        quantity: Quantity(1),
+        quantity: Quantity::new(1).unwrap(),
         price,
-        side: OrderType::Buy,
+        side,
     }
 }
 
 #[test]
-fn order_id_works() {
-    let order_id = OrderID(0);
-    assert_eq!(order_id.0, 0);
+fn construct_bid_datastruct() {
+    let mut order_book = OrderBook::new();
+
+    let order1 = order_helper(OrderID(0), Price(2), Side::Buy);
+    let order2 = order_helper(OrderID(1), Price(3), Side::Buy);
+    let order3 = order_helper(OrderID(2), Price(2), Side::Buy);
+
+    order_book.insert(order1);
+    order_book.insert(order2);
+    order_book.insert(order3);
+
+    assert_eq!(order_book.best_bid(), OrderID(1));
+    assert_eq!(order_book.bid_count(), 3);
+    assert_eq!(order_book.ask_count(), 0);
+    assert_eq!(order_book.price_level_count(), 2);
 }
 
-#[test]
-fn btree_test() {
-    let mut bt: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
-    for i in (0..100).rev() {
-        for j in 0..5 {
-            bt.entry(i).or_default().insert(j);
-        }
-    }
-    assert_eq!(bt.len(), 100);
-    assert_eq!(
-        *bt.last_key_value().unwrap().1,
-        BTreeSet::from([0, 1, 2, 3, 4])
-    );
-    assert_eq!(bt.last_key_value().unwrap().0, &99);
+fn construct_ask_datastruct() {
+    let mut order_book = OrderBook::new();
 
-    let expected = BTreeSet::from([0, 1, 2, 3, 4]);
-    for set in bt.values() {
-        assert_eq!(*set, expected);
-    }
+    let order1 = order_helper(OrderID(0), Price(2), Side::Sell);
+    let order2 = order_helper(OrderID(1), Price(3), Side::Sell);
+    let order3 = order_helper(OrderID(2), Price(2), Side::Sell);
 
-    println!("{:?}", bt);
-}
+    order_book.insert(order1);
+    order_book.insert(order2);
+    order_book.insert(order3);
 
-#[test]
-fn price_and_order_in_btree() {
-    let mut bt: BTreeMap<Price, VecDeque<Order>> = BTreeMap::new();
-
-    for i in (0..3).rev() {
-        for j in 0..3 {
-            let order = order_helper(OrderID(j), Price(i));
-            bt.entry(order.price)
-                .or_default()
-                .push_back(Order::Limit(order));
-        }
-    }
-
-    let collected_keys: Vec<&Price> = bt.keys().collect();
-    let expected_keys: Vec<&Price> = vec![&Price(0), &Price(1), &Price(2)];
-    assert_eq!(collected_keys, expected_keys);
+    assert_eq!(order_book.best_ask(), OrderID(0));
+    assert_eq!(order_book.ask_count(), 3);
+    assert_eq!(order_book.bid_count(), 0);
+    assert_eq!(price_level_count(), 2);
 }
 
 #[test]
 fn orderid_sort_in_btree() {
-    let mut pricelvl: PriceLevel = PriceLevel {
-        orders: BTreeMap::new(),
-        running_total: 0,
-    };
+    let mut pricelvl = PriceLevel::new();
 
-    for i in (0..3).rev() {
+    for i in (0..2).rev() {
         for j in 0..3 {
-            let order = order_helper(OrderID(j), Price(i));
-            pricelvl.orders.insert(order.id, Order::Limit(order));
-            pricelvl.running_total += 1;
+            let order = order_helper(OrderID(i), Price(j), Side::Buy);
+            pricelvl.insert(order.id, order);
         }
     }
 
     let collected_keys: Vec<&OrderID> = pricelvl.orders.keys().collect();
-    let expected_keys: Vec<&OrderID> = vec![&OrderID(0), &OrderID(1), &OrderID(2)];
+    let expected_keys: Vec<&OrderID> = vec![
+        &OrderID(0),
+        &OrderID(1),
+        &OrderID(2),
+        &OrderID(3),
+        &OrderID(4),
+        &OrderID(5),
+    ];
+
+    println!("{:?}", pricelvl.orders);
 
     assert_eq!(collected_keys, expected_keys);
 }
