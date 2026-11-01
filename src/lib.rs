@@ -5,10 +5,10 @@ use std::collections::HashMap;
 
 // positive, monotonically increasing
 // to allow ordering of FIFO queue of requests
-#[derive(Hash, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
+#[derive(Hash, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 struct OrderID(u32);
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug)]
 struct Quantity(u64);
 
 impl Quantity {
@@ -20,7 +20,7 @@ impl Quantity {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 struct Price(u64);
 
 #[derive(Debug)]
@@ -29,7 +29,7 @@ enum Order {
     Limit(LimitOrder),
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug)]
 enum Side {
     Buy,
     Sell,
@@ -42,7 +42,7 @@ struct MarketOrder {
     side: Side,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct LimitOrder {
     id: OrderID,
     quantity: Quantity,
@@ -50,9 +50,13 @@ struct LimitOrder {
     side: Side,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum CancelError {
+    UnknownOrder(OrderID),
+}
+
 struct PriceLevel {
     orders: BTreeMap<OrderID, LimitOrder>,
-    total_count: u64,
 }
 
 pub struct OrderBook {
@@ -66,25 +70,26 @@ impl PriceLevel {
     fn new() -> Self {
         Self {
             orders: BTreeMap::new(),
-            total_count: 0,
         }
     }
 
-    fn insert(&mut self, order_id: OrderID, order: LimitOrder) {
-        if let Some(existing) = self.orders.insert(order_id, order) {
+    fn insert(&mut self, order: LimitOrder) {
+        if let Some(existing) = self.orders.insert(order.id, order) {
             panic!("duplicate order_id found {:?}", existing);
         };
-        self.total_count += 1;
     }
 
-    fn total(&self) -> u64 {
-        return self.total_count;
+    fn order_count(&self) -> usize {
+        return self.orders.len();
     }
 
-    fn remove(&mut self, order_id: OrderID) {
-        if let Some(order) = self.orders.remove_entry(&order_id) {
-            panic!("order with id: {:?} not found", order);
-        };
+    fn remove(&mut self, order_id: OrderID) -> LimitOrder {
+        match self.orders.remove_entry(&order_id) {
+            Some(kv) => kv.1,
+            None => {
+                panic!("order with id: {:?} not found", order_id);
+            }
+        }
     }
 }
 
@@ -128,36 +133,49 @@ impl OrderBook {
                 .bids
                 .entry(order.price)
                 .or_insert_with(PriceLevel::new)
-                .insert(order.id, order),
+                .insert(order),
             Side::Sell => self
                 .asks
                 .entry(order.price)
                 .or_insert_with(PriceLevel::new)
-                .insert(order.id, order),
+                .insert(order),
         }
     }
-    fn cancel_order(&mut self, order_id: OrderID) {
+
+    fn cancel_order(&mut self, order_id: OrderID) -> Result<LimitOrder, CancelError> {
         todo!()
     }
-    fn total_orders(&self) -> u64 {
+    fn total_orders(&self) -> usize {
         todo!()
     }
 
-    fn best_bid(&self) -> OrderID {
-        todo!()
+    fn best_bid(&self) -> Option<Price> {
+        self.bids.last_key_value().map(|(k, _v)| *k)
     }
 
-    fn bid_count(&self) -> u64 {
-        todo!()
-    }
-    fn ask_count(&self) -> u64 {
-        todo!()
-    }
-    fn price_level_count(&self) -> u64 {
-        todo!()
+    fn bid_count(&self) -> usize {
+        self.bids
+            .values()
+            .map(|price_level| price_level.total())
+            .sum()
     }
 
-    fn best_ask(&self) -> OrderID {
-        todo!()
+    fn ask_count(&self) -> usize {
+        self.asks
+            .values()
+            .map(|price_level| price_level.total())
+            .sum()
+    }
+
+    fn bid_level_count(&self) -> usize {
+        self.bids.len()
+    }
+
+    fn ask_level_count(&self) -> usize {
+        self.asks.len()
+    }
+
+    fn best_ask(&self) -> Option<Price> {
+        self.asks.first_key_value().map(|(k, _v)| *k)
     }
 }

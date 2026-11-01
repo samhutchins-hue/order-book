@@ -1,7 +1,5 @@
-use crate::Order;
 use crate::Price;
 use crate::*;
-use std::collections::BTreeMap;
 
 fn order_helper(id: OrderID, price: Price, side: Side) -> LimitOrder {
     LimitOrder {
@@ -13,7 +11,7 @@ fn order_helper(id: OrderID, price: Price, side: Side) -> LimitOrder {
 }
 
 #[test]
-fn construct_bid_datastruct() {
+fn best_bid_is_highest_price() {
     let mut order_book = OrderBook::new();
 
     let order1 = order_helper(OrderID(0), Price(2), Side::Buy);
@@ -24,12 +22,13 @@ fn construct_bid_datastruct() {
     order_book.insert(order2);
     order_book.insert(order3);
 
-    assert_eq!(order_book.best_bid(), OrderID(1));
-    assert_eq!(order_book.bid_count(), 3);
-    assert_eq!(order_book.ask_count(), 0);
-    assert_eq!(order_book.price_level_count(), 2);
+    assert_eq!(order_book.best_bid(), Some(Price(3)), "best_bid failed");
+    assert_eq!(order_book.bid_count(), 3, "bid_count failed");
+    assert_eq!(order_book.ask_count(), 0, "ask_count failed");
+    assert_eq!(order_book.bid_level_count(), 2, "bid_level_count failed");
 }
 
+#[test]
 fn construct_ask_datastruct() {
     let mut order_book = OrderBook::new();
 
@@ -41,34 +40,8 @@ fn construct_ask_datastruct() {
     order_book.insert(order2);
     order_book.insert(order3);
 
-    assert_eq!(order_book.best_ask(), OrderID(0));
+    assert_eq!(order_book.best_ask(), Some(Price(2)));
     assert_eq!(order_book.ask_count(), 3);
     assert_eq!(order_book.bid_count(), 0);
-    assert_eq!(price_level_count(), 2);
-}
-
-#[test]
-fn orderid_sort_in_btree() {
-    let mut pricelvl = PriceLevel::new();
-
-    for i in (0..2).rev() {
-        for j in 0..3 {
-            let order = order_helper(OrderID(i), Price(j), Side::Buy);
-            pricelvl.insert(order.id, order);
-        }
-    }
-
-    let collected_keys: Vec<&OrderID> = pricelvl.orders.keys().collect();
-    let expected_keys: Vec<&OrderID> = vec![
-        &OrderID(0),
-        &OrderID(1),
-        &OrderID(2),
-        &OrderID(3),
-        &OrderID(4),
-        &OrderID(5),
-    ];
-
-    println!("{:?}", pricelvl.orders);
-
-    assert_eq!(collected_keys, expected_keys);
+    assert_eq!(order_book.ask_level_count(), 2);
 }
