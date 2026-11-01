@@ -146,7 +146,7 @@ impl OrderBook {
         todo!()
     }
     fn total_orders(&self) -> usize {
-        todo!()
+        self.bid_count() + self.ask_count()
     }
 
     fn best_bid(&self) -> Option<Price> {

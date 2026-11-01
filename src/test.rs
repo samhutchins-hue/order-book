@@ -45,3 +45,18 @@ fn construct_ask_datastruct() {
     assert_eq!(order_book.bid_count(), 0);
     assert_eq!(order_book.ask_level_count(), 2);
 }
+
+#[test]
+fn cancel_order_test() {
+    let mut order_book = OrderBook::new();
+
+    let order1 = order_helper(OrderID(0), Price(2), Side::Buy);
+
+    order_book.insert(order1);
+
+    assert_eq!(order_book.total_orders(), 1);
+
+    let cancel_res = order_book.cancel_order(OrderID(0));
+    assert_eq!(cancel_res.unwrap().id, OrderID(0));
+    assert_eq!(order_book.total_orders(), 0);
+}
