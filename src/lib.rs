@@ -156,14 +156,14 @@ impl OrderBook {
     fn bid_count(&self) -> usize {
         self.bids
             .values()
-            .map(|price_level| price_level.total())
+            .map(|price_level| price_level.order_count())
             .sum()
     }
 
     fn ask_count(&self) -> usize {
         self.asks
             .values()
-            .map(|price_level| price_level.total())
+            .map(|price_level| price_level.order_count())
             .sum()
     }
 
