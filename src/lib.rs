@@ -80,7 +80,7 @@ impl PriceLevel {
     }
 
     fn order_count(&self) -> usize {
-        return self.orders.len();
+        self.orders.len()
     }
 
     fn remove(&mut self, order_id: OrderID) -> LimitOrder {
@@ -143,7 +143,35 @@ impl OrderBook {
     }
 
     fn cancel_order(&mut self, order_id: OrderID) -> Result<LimitOrder, CancelError> {
-        todo!()
+        let order = self
+            .orders
+            .remove(&order_id)
+            .ok_or(CancelError::UnknownOrder(order_id))?;
+
+        match order.0 {
+            // go to price level provided by hashmap lookup (gives side and price)
+            // call remove on that price level
+            Side::Buy => {
+                if let Some(price_level) = self.bids.get_mut(&order.1) {
+                    Ok(price_level
+                        .orders
+                        .remove(&order_id)
+                        .ok_or(CancelError::UnknownOrder(order_id))?)
+                } else {
+                    Err(CancelError::UnknownOrder(order_id))
+                }
+            }
+            Side::Sell => {
+                if let Some(price_level) = self.bids.get_mut(&order.1) {
+                    Ok(price_level
+                        .orders
+                        .remove(&order_id)
+                        .ok_or(CancelError::UnknownOrder(order_id))?)
+                } else {
+                    Err(CancelError::UnknownOrder(order_id))
+                }
+            }
+        }
     }
     fn total_orders(&self) -> usize {
         self.bid_count() + self.ask_count()
