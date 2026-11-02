@@ -157,33 +157,37 @@ impl OrderBook {
     }
 
     fn cancel_order(&mut self, order_id: OrderID) -> Result<LimitOrder, CancelError> {
-        let order = self
+        let (order_side, order_price) = self
             .orders
             .remove(&order_id)
             .ok_or(CancelError::UnknownOrder(order_id))?;
 
-        match order.0 {
+        match order_side {
             // go to price level provided by hashmap lookup (gives side and price)
             // call remove on that price level
             Side::Buy => {
-                if let Some(price_level) = self.bids.get_mut(&order.1) {
-                    Ok(price_level
-                        .orders
-                        .remove(&order_id)
-                        .ok_or(CancelError::UnknownOrder(order_id))?)
-                } else {
-                    Err(CancelError::UnknownOrder(order_id))
+                let Some(price_level) = self.bids.get_mut(&order_price) else {
+                    return Err(CancelError::UnknownOrder(order_id));
+                };
+                let canceled_order = price_level.remove(order_id);
+                if price_level.order_count() == 0 {
+                    self.bids
+                        .remove(&order_price)
+                        .expect("expected price level to exist for removal");
                 }
+                Ok(canceled_order)
             }
             Side::Sell => {
-                if let Some(price_level) = self.bids.get_mut(&order.1) {
-                    Ok(price_level
-                        .orders
-                        .remove(&order_id)
-                        .ok_or(CancelError::UnknownOrder(order_id))?)
-                } else {
-                    Err(CancelError::UnknownOrder(order_id))
+                let Some(price_level) = self.asks.get_mut(&order_price) else {
+                    return Err(CancelError::UnknownOrder(order_id));
+                };
+                let canceled_order = price_level.remove(order_id);
+                if price_level.order_count() == 0 {
+                    self.asks
+                        .remove(&order_price)
+                        .expect("expected price level to exist for removal");
                 }
+                Ok(canceled_order)
             }
         }
     }
