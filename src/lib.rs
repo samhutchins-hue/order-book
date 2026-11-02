@@ -121,6 +121,20 @@ impl OrderBook {
         }
     }
 
+    fn process_limit_order(&mut self, order: LimitOrder) {
+        match order.side {
+            Side::Buy => todo!(),
+            Side::Sell => todo!(),
+        }
+    }
+
+    fn process_market_order(&mut self, order: MarketOrder) {
+        match order.side {
+            Side::Buy => todo!(),
+            Side::Sell => todo!(),
+        }
+    }
+
     fn insert(&mut self, order: LimitOrder) {
         // insert into the hashmap
         if let Some(existing) = self.orders.insert(order.id, (order.side, order.price)) {
