@@ -45,7 +45,6 @@ fn construct_ask_datastruct() {
     assert_eq!(order_book.bid_count(), 0);
     assert_eq!(order_book.ask_level_count(), 2);
 }
-
 #[test]
 fn cancel_order_bid_test() {
     let mut order_book = OrderBook::new();
@@ -73,6 +72,7 @@ fn cancel_order_ask_test() {
     assert_eq!(order_book.total_orders(), 1);
 
     let cancel_res = order_book.cancel_order(OrderID(0));
+
     assert_eq!(cancel_res.unwrap().id, OrderID(0));
     assert_eq!(order_book.total_orders(), 0);
     assert_eq!(order_book.bid_level_count(), 0);
@@ -96,6 +96,23 @@ fn process_market_order_buy_fill_test() {
     let result = order_book.process_market_order(order3);
 
     assert_eq!(order_book.total_orders(), 0);
+    assert_eq!(order_book.ask_level_count(), 0);
+    assert_eq!(result.status, OrderStatus::Filled);
+    let expected_fills = vec![
+        Fill {
+            maker_id: OrderID(0),
+            taker_id: OrderID(2),
+            quantity: Quantity(1),
+            price: Price(10),
+        },
+        Fill {
+            maker_id: OrderID(1),
+            taker_id: OrderID(2),
+            quantity: Quantity(1),
+            price: Price(20),
+        },
+    ];
+    assert_eq!(&result.fills, &expected_fills);
 }
 
 #[test]

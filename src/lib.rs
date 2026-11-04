@@ -8,7 +8,7 @@ use std::collections::HashMap;
 #[derive(Hash, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 struct OrderID(u32);
 
-#[derive(PartialEq, Eq, Copy, Clone, Debug)]
+#[derive(PartialOrd, Ord, PartialEq, Eq, Copy, Clone, Debug)]
 struct Quantity(u64);
 
 impl Quantity {
@@ -48,6 +48,36 @@ struct LimitOrder {
     quantity: Quantity,
     price: Price,
     side: Side,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct Fill {
+    maker_id: OrderID,
+    taker_id: OrderID,
+    quantity: Quantity,
+    price: Price,
+    // aggressor: Side,
+}
+
+#[derive(PartialEq, Eq, Debug)]
+enum OrderStatus {
+    Filled,
+    Resting(Quantity),
+    Canceled(Quantity),
+}
+
+struct MatchResult {
+    fills: Vec<Fill>,
+    status: OrderStatus,
+}
+
+impl MatchResult {
+    fn new() -> Self {
+        Self {
+            fills: Vec::new(),
+            status: OrderStatus::Filled,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -128,11 +158,102 @@ impl OrderBook {
         }
     }
 
-    fn process_market_order(&mut self, order: MarketOrder) {
-        match order.side {
-            Side::Buy => todo!(),
-            Side::Sell => todo!(),
+    fn match_market_order(&mut self, order: &MarketOrder) -> MatchResult {
+        let mut match_result = MatchResult::new();
+        let mut remaining = order.quantity.0;
+
+        let book = if order.side == Side::Buy {
+            &mut self.asks
+        } else {
+            &mut self.bids
+        };
+
+        'level_loop: loop {
+            // get the best (price, price level) of ask for a buy
+            let best_level = match order.side {
+                Side::Buy => book.first_entry(),
+                Side::Sell => book.last_entry(),
+            };
+            let Some(mut level_entry) = best_level else {
+                // report that there is no asks level so cancel remaining order
+                break 'level_loop;
+            };
+            // let best_price = *level_entry.key();
+            let level = level_entry.get_mut();
+
+            'order_loop: loop {
+                // get oldest order at price level we want to buy from
+                let Some(mut order_entry) = level.orders.first_entry() else {
+                    break 'order_loop;
+                };
+
+                let maker = order_entry.get_mut();
+
+                let fill_qty = std::cmp::min(maker.quantity.0, remaining);
+
+                let fill_record = Fill {
+                    maker_id: maker.id,
+                    taker_id: order.id,
+                    quantity: Quantity(fill_qty),
+                    price: maker.price,
+                };
+                match_result.fills.push(fill_record);
+
+                remaining -= fill_qty;
+
+                if fill_qty == maker.quantity.0 {
+                    // decrement required quantity from current order and remove maker from price level
+                    let filled_maker = order_entry.remove();
+                    self.orders.remove(&filled_maker.id);
+                } else {
+                    // subtract required quantity from maker
+                    maker.quantity.0 -= fill_qty;
+                }
+
+                if remaining == 0 {
+                    break 'order_loop;
+                }
+            }
+
+            if level.orders.is_empty() {
+                level_entry.remove();
+            }
+
+            if remaining == 0 {
+                break 'level_loop;
+            }
         }
+
+        if remaining != 0 {
+            match_result.status = OrderStatus::Canceled(Quantity(remaining));
+        } else {
+            match_result.status = OrderStatus::Filled;
+        }
+
+        match_result
+    }
+
+    fn process_market_order(&mut self, order: MarketOrder) -> MatchResult {
+        // trying to fill the market order's quantity
+        // by getting the best ask and seeing if it can fill the market order completely
+        // current best_ask can fill perfectly, fill order partially
+        // when an order uses a best ask it can either take quanity of it partially, or completely.
+        //
+        // so we need to update the state of the current market order and the best_ask
+        // market_order: partially filled, fully filled
+        // best_ask: partially filled, fully filled (remove from pricelevel)
+        //
+        // so iterate over the pricelevels
+        // iterate over each order in price level until market order is filled: {
+        //
+        //      1. if order filled, break loop
+        //
+        //      2. if maker order filled, remove maker from pricelevel and check if price level is empty
+        //      and rmeove if so
+        //
+        //  }
+
+        self.match_market_order(&order)
     }
 
     fn insert(&mut self, order: LimitOrder) {
