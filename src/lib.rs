@@ -134,6 +134,12 @@ impl LimitOrder {
     }
 }
 
+impl MarketOrder {
+    fn new(id: OrderID, quantity: Quantity, side: Side) -> Self {
+        Self { id, quantity, side }
+    }
+}
+
 impl OrderBook {
     fn new() -> Self {
         Self {
@@ -151,11 +157,90 @@ impl OrderBook {
         }
     }
 
-    fn process_limit_order(&mut self, order: LimitOrder) {
+    fn process_limit_order(&mut self, order: LimitOrder) -> MatchResult {
         match order.side {
-            Side::Buy => todo!(),
-            Side::Sell => todo!(),
+            Side::Buy => self.match_limit_order(&order),
+            Side::Sell => self.match_limit_order(&order),
         }
+    }
+
+    fn match_limit_order(&mut self, order: &LimitOrder) -> MatchResult {
+        let mut match_result = MatchResult::new();
+        let mut remaining = order.quantity.0;
+
+        let book = if order.side == Side::Buy {
+            &mut self.asks
+        } else {
+            &mut self.bids
+        };
+
+        'level_loop: loop {
+            let best_level = match order.side {
+                Side::Buy => book.first_entry(),
+                Side::Sell => book.last_entry(),
+            };
+
+            let Some(mut level_entry) = best_level else {
+                break 'level_loop;
+            };
+
+            if order.side == Side::Buy && *level_entry.key() > order.price {
+                break 'level_loop;
+            }
+            if order.side == Side::Sell && *level_entry.key() < order.price {
+                break 'level_loop;
+            }
+
+            let level = level_entry.get_mut();
+
+            'order_loop: loop {
+                let Some(mut order_entry) = level.orders.first_entry() else {
+                    break 'order_loop;
+                };
+
+                let maker = order_entry.get_mut();
+
+                let fill_qty = std::cmp::min(maker.quantity.0, remaining);
+
+                let fill_record = Fill {
+                    maker_id: maker.id,
+                    taker_id: order.id,
+                    quantity: Quantity(fill_qty),
+                    price: maker.price,
+                };
+
+                match_result.fills.push(fill_record);
+
+                remaining -= fill_qty;
+
+                if fill_qty == maker.quantity.0 {
+                    let filled_maker = order_entry.remove();
+                    self.orders.remove(&filled_maker.id);
+                } else {
+                    maker.quantity.0 -= fill_qty;
+                }
+
+                if remaining == 0 {
+                    break 'order_loop;
+                }
+            }
+
+            if level.orders.is_empty() {
+                level_entry.remove();
+            }
+
+            if remaining == 0 {
+                break 'level_loop;
+            }
+        }
+
+        if remaining != 0 {
+            match_result.status = OrderStatus::Resting(Quantity(remaining));
+        } else {
+            match_result.status = OrderStatus::Filled;
+        }
+
+        match_result
     }
 
     fn match_market_order(&mut self, order: &MarketOrder) -> MatchResult {

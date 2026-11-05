@@ -1,22 +1,21 @@
 use crate::Price;
 use crate::*;
 
-fn order_helper(id: OrderID, price: Price, side: Side) -> LimitOrder {
-    LimitOrder {
-        id,
-        quantity: Quantity::new(1).unwrap(),
-        price,
-        side,
-    }
+fn limit_order_helper(id: OrderID, price: Price, side: Side) -> LimitOrder {
+    LimitOrder::new(id, Quantity::new(1).unwrap(), price, side)
+}
+
+fn market_order_helper(id: u32, quantity: u64, side: Side) -> MarketOrder {
+    MarketOrder::new(OrderID(id), Quantity::new(quantity).unwrap(), side)
 }
 
 #[test]
 fn best_bid_is_highest_price() {
     let mut order_book = OrderBook::new();
 
-    let order1 = order_helper(OrderID(0), Price(2), Side::Buy);
-    let order2 = order_helper(OrderID(1), Price(3), Side::Buy);
-    let order3 = order_helper(OrderID(2), Price(2), Side::Buy);
+    let order1 = limit_order_helper(OrderID(0), Price(2), Side::Buy);
+    let order2 = limit_order_helper(OrderID(1), Price(3), Side::Buy);
+    let order3 = limit_order_helper(OrderID(2), Price(2), Side::Buy);
 
     order_book.insert(order1);
     order_book.insert(order2);
@@ -32,9 +31,9 @@ fn best_bid_is_highest_price() {
 fn construct_ask_datastruct() {
     let mut order_book = OrderBook::new();
 
-    let order1 = order_helper(OrderID(0), Price(2), Side::Sell);
-    let order2 = order_helper(OrderID(1), Price(3), Side::Sell);
-    let order3 = order_helper(OrderID(2), Price(2), Side::Sell);
+    let order1 = limit_order_helper(OrderID(0), Price(2), Side::Sell);
+    let order2 = limit_order_helper(OrderID(1), Price(3), Side::Sell);
+    let order3 = limit_order_helper(OrderID(2), Price(2), Side::Sell);
 
     order_book.insert(order1);
     order_book.insert(order2);
@@ -49,7 +48,7 @@ fn construct_ask_datastruct() {
 fn cancel_order_bid_test() {
     let mut order_book = OrderBook::new();
 
-    let order1 = order_helper(OrderID(0), Price(2), Side::Buy);
+    let order1 = limit_order_helper(OrderID(0), Price(2), Side::Buy);
 
     order_book.insert(order1);
 
@@ -65,7 +64,7 @@ fn cancel_order_bid_test() {
 fn cancel_order_ask_test() {
     let mut order_book = OrderBook::new();
 
-    let order1 = order_helper(OrderID(0), Price(2), Side::Sell);
+    let order1 = limit_order_helper(OrderID(0), Price(2), Side::Sell);
 
     order_book.insert(order1);
 
@@ -77,12 +76,13 @@ fn cancel_order_ask_test() {
     assert_eq!(order_book.total_orders(), 0);
     assert_eq!(order_book.bid_level_count(), 0);
 }
+
 #[test]
-fn process_market_order_buy_fill_test() {
+fn market_order_buy_fill_test() {
     let mut order_book = OrderBook::new();
 
-    let order1 = order_helper(OrderID(0), Price(10), Side::Sell);
-    let order2 = order_helper(OrderID(1), Price(20), Side::Sell);
+    let order1 = limit_order_helper(OrderID(0), Price(10), Side::Sell);
+    let order2 = limit_order_helper(OrderID(1), Price(20), Side::Sell);
 
     order_book.insert(order1);
     order_book.insert(order2);
@@ -116,15 +116,164 @@ fn process_market_order_buy_fill_test() {
 }
 
 #[test]
-fn process_market_order_buy_partial_test() {
-    todo!()
+fn market_order_buy_partial_fill_test() {
+    let mut order_book = OrderBook::new();
+
+    let order1 = LimitOrder::new(OrderID(0), Quantity(5), Price(10), Side::Sell);
+    // let order2 = LimitOrder::new(OrderID(0), Quantity(10), Price(20), Side::Sell);
+
+    order_book.insert(order1);
+    // order_book.insert(order2);
+
+    let order3 = market_order_helper(2, 10, Side::Buy);
+
+    let result = order_book.process_market_order(order3);
+
+    let expected_fills = vec![Fill {
+        maker_id: OrderID(0),
+        taker_id: OrderID(2),
+        quantity: Quantity(5),
+        price: Price(10),
+    }];
+    let expected_status: OrderStatus = OrderStatus::Canceled(Quantity(5));
+
+    assert_eq!(result.fills, expected_fills);
+    assert_eq!(result.status, expected_status);
+    assert_eq!(order_book.total_orders(), 0);
+    assert_eq!(order_book.ask_level_count(), 0);
 }
+
+#[test]
+fn market_order_empties_one_level() {
+    let mut order_book = OrderBook::new();
+
+    let order1 = LimitOrder::new(OrderID(0), Quantity(5), Price(10), Side::Sell);
+    let order2 = LimitOrder::new(OrderID(1), Quantity(10), Price(20), Side::Sell);
+
+    order_book.insert(order1);
+    order_book.insert(order2);
+
+    let order3 = market_order_helper(2, 10, Side::Buy);
+
+    let result = order_book.process_market_order(order3);
+
+    let expected_fills = vec![
+        Fill {
+            maker_id: OrderID(0),
+            taker_id: OrderID(2),
+            quantity: Quantity(5),
+            price: Price(10),
+        },
+        Fill {
+            maker_id: OrderID(1),
+            taker_id: OrderID(2),
+            quantity: Quantity(5),
+            price: Price(20),
+        },
+    ];
+
+    let expected_status = OrderStatus::Filled;
+
+    assert_eq!(&result.fills, &expected_fills);
+    assert_eq!(&result.status, &expected_status);
+    assert_eq!(order_book.total_orders(), 1);
+    assert_eq!(order_book.ask_level_count(), 1);
+}
+
+#[test]
+fn market_order_sell_fill_test() {
+    let mut order_book = OrderBook::new();
+
+    let order1 = LimitOrder::new(OrderID(0), Quantity(5), Price(10), Side::Buy);
+    let order2 = LimitOrder::new(OrderID(1), Quantity(10), Price(20), Side::Buy);
+
+    order_book.insert(order1);
+    order_book.insert(order2);
+
+    let order3 = market_order_helper(2, 10, Side::Sell);
+
+    let result = order_book.process_market_order(order3);
+
+    assert_eq!(order_book.total_orders(), 1);
+    assert_eq!(order_book.bid_level_count(), 1);
+
+    let expected_fills = vec![Fill {
+        maker_id: OrderID(1),
+        taker_id: OrderID(2),
+        quantity: Quantity(10),
+        price: Price(20),
+    }];
+
+    let expected_status = OrderStatus::Filled;
+
+    assert_eq!(&result.fills, &expected_fills);
+    assert_eq!(&result.status, &expected_status);
+}
+
 #[test]
 fn process_limit_order_buy_fill_test() {
-    todo!()
+    let mut order_book = OrderBook::new();
+
+    let order1 = LimitOrder::new(OrderID(0), Quantity(5), Price(10), Side::Sell);
+    let order2 = LimitOrder::new(OrderID(1), Quantity(5), Price(20), Side::Sell);
+
+    order_book.insert(order1);
+    order_book.insert(order2);
+
+    let order3 = LimitOrder::new(OrderID(2), Quantity(6), Price(20), Side::Buy);
+
+    let result = order_book.process_limit_order(order3);
+
+    assert_eq!(order_book.total_orders(), 1);
+    assert_eq!(order_book.ask_count(), 1);
+
+    let expected_fills = vec![
+        Fill {
+            maker_id: OrderID(0),
+            taker_id: OrderID(2),
+            quantity: Quantity(5),
+            price: Price(10),
+        },
+        Fill {
+            maker_id: OrderID(1),
+            taker_id: OrderID(2),
+            quantity: Quantity(1),
+            price: Price(20),
+        },
+    ];
+
+    let expected_status = OrderStatus::Filled;
+    assert_eq!(&result.status, &expected_status);
+    assert_eq!(&result.fills, &expected_fills);
 }
 
 #[test]
 fn process_limit_order_buy_partial_test() {
-    todo!()
+    let mut order_book = OrderBook::new();
+
+    let order1 = LimitOrder::new(OrderID(0), Quantity(5), Price(10), Side::Buy);
+    // let order2 = LimitOrder::new(OrderID(1), Quantity(10), Price(20), Side::Buy);
+
+    order_book.insert(order1);
+    // order_book.insert(order2);
+
+    let order3 = market_order_helper(2, 10, Side::Sell);
+
+    let result = order_book.process_market_order(order3);
+
+    assert_eq!(order_book.total_orders(), 1);
+    assert_eq!(order_book.bid_level_count(), 0);
+    assert_eq!(order_book.ask_level_count(), 1);
+
+    let expected_fills = vec![Fill {
+        maker_id: OrderID(0),
+        taker_id: OrderID(2),
+        quantity: Quantity(5),
+        price: Price(10),
+    }];
+
+    let expected_status = OrderStatus::Resting(Quantity(5));
+
+    assert_eq!(&result.fills, &expected_fills);
+    assert_eq!(&result.status, &expected_status);
 }
