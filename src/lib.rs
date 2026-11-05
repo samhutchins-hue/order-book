@@ -85,6 +85,7 @@ enum CancelError {
     UnknownOrder(OrderID),
 }
 
+#[derive(Debug)]
 struct PriceLevel {
     orders: BTreeMap<OrderID, LimitOrder>,
 }
@@ -158,13 +159,14 @@ impl OrderBook {
     }
 
     fn process_limit_order(&mut self, order: LimitOrder) -> MatchResult {
-        match order.side {
-            Side::Buy => self.match_limit_order(&order),
-            Side::Sell => self.match_limit_order(&order),
-        }
+        self.match_limit_order(order)
+        // match order.side {
+        //     Side::Buy => self.match_limit_order(order),
+        //     Side::Sell => self.match_limit_order(order),
+        // }
     }
 
-    fn match_limit_order(&mut self, order: &LimitOrder) -> MatchResult {
+    fn match_limit_order(&mut self, mut order: LimitOrder) -> MatchResult {
         let mut match_result = MatchResult::new();
         let mut remaining = order.quantity.0;
 
@@ -236,6 +238,9 @@ impl OrderBook {
 
         if remaining != 0 {
             match_result.status = OrderStatus::Resting(Quantity(remaining));
+            debug_assert!(remaining > 0);
+            order.quantity = Quantity(remaining);
+            self.insert(order);
         } else {
             match_result.status = OrderStatus::Filled;
         }
@@ -243,7 +248,7 @@ impl OrderBook {
         match_result
     }
 
-    fn match_market_order(&mut self, order: &MarketOrder) -> MatchResult {
+    fn match_market_order(&mut self, order: MarketOrder) -> MatchResult {
         let mut match_result = MatchResult::new();
         let mut remaining = order.quantity.0;
 
@@ -338,7 +343,7 @@ impl OrderBook {
         //
         //  }
 
-        self.match_market_order(&order)
+        self.match_market_order(order)
     }
 
     fn insert(&mut self, order: LimitOrder) {
