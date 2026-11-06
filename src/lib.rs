@@ -151,33 +151,66 @@ impl OrderBook {
         }
     }
 
-    fn process_order(&mut self, order: Order) {
+    // need the takers_id, side, quantity, Option<price>
+    fn process_order(&mut self, order: Order) -> MatchResult {
         match order {
-            Order::Market(market_order) => todo!(),
-            Order::Limit(limit_order) => todo!(),
+            Order::Market(market_order) => {
+                let (fills, remaining) = self.match_order_helper(
+                    market_order.id,
+                    market_order.quantity,
+                    market_order.side,
+                    None,
+                );
+                if let Some(quantity) = remaining {
+                    return MatchResult {
+                        fills,
+                        status: OrderStatus::Canceled(quantity),
+                    };
+                }
+                MatchResult {
+                    fills,
+                    status: OrderStatus::Filled,
+                }
+            }
+            Order::Limit(limit_order) => {
+                let (fills, remaining) = self.match_order_helper(
+                    limit_order.id,
+                    limit_order.quantity,
+                    limit_order.side,
+                    Some(limit_order.price),
+                );
+                if let Some(quantity) = remaining {
+                    self.rest_limit_order(limit_order, quantity);
+                    return MatchResult {
+                        fills,
+                        status: OrderStatus::Resting(quantity),
+                    };
+                }
+                MatchResult {
+                    fills,
+                    status: OrderStatus::Filled,
+                }
+            }
         }
     }
 
-    fn process_limit_order(&mut self, order: LimitOrder) -> MatchResult {
-        self.match_limit_order(order)
-        // match order.side {
-        //     Side::Buy => self.match_limit_order(order),
-        //     Side::Sell => self.match_limit_order(order),
-        // }
-    }
+    fn match_order_helper(
+        &mut self,
+        taker_id: OrderID,
+        quantity: Quantity,
+        side: Side,
+        maybe_price_limit: Option<Price>,
+    ) -> (Vec<Fill>, Option<Quantity>) {
+        let mut fills: Vec<Fill> = Vec::new();
+        let mut remaining = quantity.0;
 
-    fn match_limit_order(&mut self, mut order: LimitOrder) -> MatchResult {
-        let mut match_result = MatchResult::new();
-        let mut remaining = order.quantity.0;
-
-        let book = if order.side == Side::Buy {
-            &mut self.asks
-        } else {
-            &mut self.bids
+        let book = match side {
+            Side::Buy => &mut self.asks,
+            Side::Sell => &mut self.bids,
         };
 
         'level_loop: loop {
-            let best_level = match order.side {
+            let best_level = match side {
                 Side::Buy => book.first_entry(),
                 Side::Sell => book.last_entry(),
             };
@@ -186,14 +219,31 @@ impl OrderBook {
                 break 'level_loop;
             };
 
-            if order.side == Side::Buy && *level_entry.key() > order.price {
-                break 'level_loop;
-            }
-            if order.side == Side::Sell && *level_entry.key() < order.price {
-                break 'level_loop;
-            }
-
+            // copy out price and get mutable reference to the current level for potential removal
+            let level_price = *level_entry.key();
             let level = level_entry.get_mut();
+
+            // match price {
+            //     Some(price) => {
+            //         if side == Side::Buy && *level_entry.key() > price {
+            //             break 'level_loop;
+            //         }
+            //         if side == Side::Sell && *level_entry.key() < price {
+            //             break 'level_loop;
+            //         }
+            //     }
+            //     None => (),
+            // }
+
+            if let Some(limit) = maybe_price_limit {
+                let crossover_limit = match side {
+                    Side::Buy => level_price > limit,
+                    Side::Sell => level_price < limit,
+                };
+                if crossover_limit {
+                    break 'level_loop;
+                }
+            }
 
             'order_loop: loop {
                 let Some(mut order_entry) = level.orders.first_entry() else {
@@ -206,12 +256,11 @@ impl OrderBook {
 
                 let fill_record = Fill {
                     maker_id: maker.id,
-                    taker_id: order.id,
+                    taker_id,
                     quantity: Quantity(fill_qty),
                     price: maker.price,
                 };
-
-                match_result.fills.push(fill_record);
+                fills.push(fill_record);
 
                 remaining -= fill_qty;
 
@@ -236,114 +285,12 @@ impl OrderBook {
             }
         }
 
-        if remaining != 0 {
-            match_result.status = OrderStatus::Resting(Quantity(remaining));
-            debug_assert!(remaining > 0);
-            order.quantity = Quantity(remaining);
-            self.insert(order);
-        } else {
-            match_result.status = OrderStatus::Filled;
-        }
-
-        match_result
+        (fills, Some(Quantity(remaining)))
     }
 
-    fn match_market_order(&mut self, order: MarketOrder) -> MatchResult {
-        let mut match_result = MatchResult::new();
-        let mut remaining = order.quantity.0;
-
-        let book = if order.side == Side::Buy {
-            &mut self.asks
-        } else {
-            &mut self.bids
-        };
-
-        'level_loop: loop {
-            // get the best (price, price level) of ask for a buy
-            let best_level = match order.side {
-                Side::Buy => book.first_entry(),
-                Side::Sell => book.last_entry(),
-            };
-            let Some(mut level_entry) = best_level else {
-                // report that there is no asks level so cancel remaining order
-                break 'level_loop;
-            };
-            // let best_price = *level_entry.key();
-            let level = level_entry.get_mut();
-
-            'order_loop: loop {
-                // get oldest order at price level we want to buy from
-                let Some(mut order_entry) = level.orders.first_entry() else {
-                    break 'order_loop;
-                };
-
-                let maker = order_entry.get_mut();
-
-                let fill_qty = std::cmp::min(maker.quantity.0, remaining);
-
-                let fill_record = Fill {
-                    maker_id: maker.id,
-                    taker_id: order.id,
-                    quantity: Quantity(fill_qty),
-                    price: maker.price,
-                };
-                match_result.fills.push(fill_record);
-
-                remaining -= fill_qty;
-
-                if fill_qty == maker.quantity.0 {
-                    // decrement required quantity from current order and remove maker from price level
-                    let filled_maker = order_entry.remove();
-                    self.orders.remove(&filled_maker.id);
-                } else {
-                    // subtract required quantity from maker
-                    maker.quantity.0 -= fill_qty;
-                }
-
-                if remaining == 0 {
-                    break 'order_loop;
-                }
-            }
-
-            if level.orders.is_empty() {
-                level_entry.remove();
-            }
-
-            if remaining == 0 {
-                break 'level_loop;
-            }
-        }
-
-        if remaining != 0 {
-            match_result.status = OrderStatus::Canceled(Quantity(remaining));
-        } else {
-            match_result.status = OrderStatus::Filled;
-        }
-
-        match_result
-    }
-
-    fn process_market_order(&mut self, order: MarketOrder) -> MatchResult {
-        // trying to fill the market order's quantity
-        // by getting the best ask and seeing if it can fill the market order completely
-        // current best_ask can fill perfectly, fill order partially
-        // when an order uses a best ask it can either take quanity of it partially, or completely.
-        //
-        // so we need to update the state of the current market order and the best_ask
-        // market_order: partially filled, fully filled
-        // best_ask: partially filled, fully filled (remove from pricelevel)
-        //
-        // so iterate over the pricelevels
-        // iterate over each order in price level until market order is filled: {
-        //
-        //      1. if order filled, break loop
-        //
-        //      2. if maker order filled, remove maker from pricelevel and check if price level is empty
-        //      and rmeove if so
-        //
-        //  }
-
-        self.match_market_order(order)
+    fn rest_limit_order(&mut self, mut order: LimitOrder, new_quantity: Quantity) {
+        order.quantity = new_quantity;
+        self.insert(order);
     }
 
     fn insert(&mut self, order: LimitOrder) {
