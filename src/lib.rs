@@ -223,18 +223,6 @@ impl OrderBook {
             let level_price = *level_entry.key();
             let level = level_entry.get_mut();
 
-            // match price {
-            //     Some(price) => {
-            //         if side == Side::Buy && *level_entry.key() > price {
-            //             break 'level_loop;
-            //         }
-            //         if side == Side::Sell && *level_entry.key() < price {
-            //             break 'level_loop;
-            //         }
-            //     }
-            //     None => (),
-            // }
-
             if let Some(limit) = maybe_price_limit {
                 let crossover_limit = match side {
                     Side::Buy => level_price > limit,
