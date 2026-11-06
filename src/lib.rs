@@ -285,7 +285,11 @@ impl OrderBook {
             }
         }
 
-        (fills, Some(Quantity(remaining)))
+        if remaining == 0 {
+            (fills, None)
+        } else {
+            (fills, Some(Quantity(remaining)))
+        }
     }
 
     fn rest_limit_order(&mut self, mut order: LimitOrder, new_quantity: Quantity) {
